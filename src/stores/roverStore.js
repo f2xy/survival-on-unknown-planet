@@ -1,25 +1,21 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import {
-  ROVER_STATUS, ROVER_DEF, ROVER_TYPES, getRoverStats,
+  ROVER_STATUS, getRoverStats,
   createRover, updateRover, deployRover as _deploy, recallRover as _recall,
 } from '@/game/systems/RoverSystem.js'
 import { useBaseStore }      from './baseStore.js'
 import { useWorldStore }     from './worldStore.js'
 import { useInventoryStore } from './inventoryStore.js'
 import { useGameStore }      from './gameStore.js'
+import { ROVER_DEF, COMPUTER_STRATEGIES, ROVER_REPAIR_COST, ROVER_REPAIR_HEAL, EMERGENCY_RECOVERY } from '@/data/balance.js'
+import { computePriorities, autoAssignRover } from '@/game/ai/RoverAI.js'
 
-export { ROVER_STATUS, ROVER_DEF, ROVER_TYPES, getRoverStats }
+// HUD uyumluluğu için alias
+const ROVER_TYPES = { ROVER: ROVER_DEF }
 
-// Bilgisayar stratejileri
-export const COMPUTER_STRATEGIES = [
-  { id: 'balanced', icon: '⚖',  label: 'DENGELİ',  desc: 'Az olan kaynaklar önce toplanır' },
-  { id: 'repair',   icon: '🔩', label: 'TAMİR',    desc: 'Hurda metal öncelikli' },
-  { id: 'explore',  icon: '💎', label: 'KEŞİF',    desc: 'Alien kaynaklar öncelikli' },
-]
-
-// Tüm kaynak türleri — öncelik sıralaması için
-const ALL_RESOURCE_TYPES = ['scrap_metal', 'crystal_shard', 'alien_plant', 'alien_crystal', 'rock']
+// Geriye dönük uyumluluk re-exportlar
+export { ROVER_STATUS, ROVER_DEF, ROVER_TYPES, getRoverStats, COMPUTER_STRATEGIES }
 
 export const useRoverStore = defineStore('rover', () => {
   const rovers           = ref([])
@@ -153,13 +149,12 @@ export const useRoverStore = defineStore('rover', () => {
     const rover     = rovers.value.find(r => r.id === roverId)
     if (!rover || rover.status !== ROVER_STATUS.DAMAGED) return false
 
-    const cost = { scrap_metal: 3 }
-    for (const [item, qty] of Object.entries(cost)) {
+    for (const [item, qty] of Object.entries(ROVER_REPAIR_COST)) {
       if (!inventory.has(item, qty)) { game.notify('Onarım için yetersiz hurda metal!', 'error'); return false }
     }
-    for (const [item, qty] of Object.entries(cost)) inventory.remove(item, qty)
+    for (const [item, qty] of Object.entries(ROVER_REPAIR_COST)) inventory.remove(item, qty)
 
-    rover.health = Math.min(rover.maxHealth, rover.health + 40)
+    rover.health = Math.min(rover.maxHealth, rover.health + ROVER_REPAIR_HEAL)
     rover.status = rover.mission ? ROVER_STATUS.DEPLOYING : ROVER_STATUS.IDLE
     _stuckSeconds = 0
     game.notify(`${rover.name} onarıldı.`, 'success')
@@ -189,14 +184,15 @@ export const useRoverStore = defineStore('rover', () => {
       const targeted = new Set(
         rovers.value.filter(r => r.mission?.nodeId).map(r => r.mission.nodeId)
       )
-      const priorities = _computePriorities(inventory)
+      const hasDamaged = rovers.value.some(r => r.status === ROVER_STATUS.DAMAGED)
+      const priorities = computePriorities(computerStrategy.value, inventory.items, hasDamaged)
 
       const storageFree = base.storageCapacity - inventory.totalCount
       if (storageFree > 0) {
         for (const rover of rovers.value) {
           if (rover.status !== ROVER_STATUS.IDLE) continue
-          if (rover.mode === 'manual') continue   // manuel mod → otonom atama yok
-          _autoAssignRover(rover, world.resourceNodes, bx, by, targeted, priorities)
+          if (rover.mode === 'manual') continue
+          autoAssignRover(rover, world.resourceNodes, bx, by, targeted, priorities)
         }
       }
 
@@ -207,11 +203,11 @@ export const useRoverStore = defineStore('rover', () => {
 
       if (allDamaged) {
         _stuckSeconds += delta
-        if (_stuckSeconds >= 15) {
+        if (_stuckSeconds >= EMERGENCY_RECOVERY.waitSeconds) {
           _stuckSeconds = 0
           const rover = rovers.value.find(r => r.status === ROVER_STATUS.DAMAGED)
           if (rover) {
-            rover.health = Math.min(rover.maxHealth, rover.health + 25)
+            rover.health = Math.min(rover.maxHealth, rover.health + EMERGENCY_RECOVERY.healAmount)
             rover.status = ROVER_STATUS.IDLE
             game.notify(`⚙ ${rover.name}: Acil sistem kurtarması gerçekleşti.`, 'warning')
           }
@@ -277,69 +273,6 @@ export const useRoverStore = defineStore('rover', () => {
     const rover = createRover()
     rovers.value.push(rover)
     return rover
-  }
-
-  // ── Otonom yönetim yardımcıları ───────────────────────────────────────────
-
-  /**
-   * Strateji + envanter durumuna göre kaynak öncelik listesi hesaplar
-   */
-  function _computePriorities(inventory) {
-    // Sabit strateji modları
-    if (computerStrategy.value === 'repair') {
-      return ['scrap_metal', 'crystal_shard', 'rock', 'alien_plant', 'alien_crystal']
-    }
-    if (computerStrategy.value === 'explore') {
-      return ['alien_crystal', 'alien_plant', 'crystal_shard', 'scrap_metal', 'rock']
-    }
-
-    // 'balanced': envanter seviyesine göre otomatik sıralama
-    const scores = {}
-    for (const t of ALL_RESOURCE_TYPES) {
-      scores[t] = inventory.items[t] ?? 0
-    }
-
-    // Hasarlı rover varsa ve hurda metal azsa → hurda metale büyük öncelik
-    const hasDamaged = rovers.value.some(r => r.status === ROVER_STATUS.DAMAGED)
-    const scrapCount = inventory.items['scrap_metal'] ?? 0
-    if (hasDamaged && scrapCount < 6) {
-      scores['scrap_metal'] -= 200  // en düşük score = en yüksek öncelik
-    }
-
-    return [...ALL_RESOURCE_TYPES].sort((a, b) => scores[a] - scores[b])
-  }
-
-  /**
-   * Öncelik skoru en yüksek düğüme rover atar
-   * Skor = öncelik bonusu (büyük) - mesafe cezası (küçük)
-   */
-  function _autoAssignRover(rover, resourceNodes, baseX, baseY, targeted, priorities) {
-    let bestNode  = null
-    let bestScore = -Infinity
-
-    for (const node of Object.values(resourceNodes)) {
-      if (node.remaining <= 0) continue
-      if (targeted.has(node.id)) continue
-
-      const dx   = node.tx - baseX
-      const dy   = node.ty - baseY
-      const dist = Math.sqrt(dx * dx + dy * dy)
-
-      // Öncelik sırası (0 = en önde) → yüksek bonus
-      const rank  = priorities.indexOf(node.type)
-      const bonus = rank >= 0 ? (priorities.length - rank) * 60 : 0
-      const score = bonus - dist
-
-      if (score > bestScore) {
-        bestScore = score
-        bestNode  = node
-      }
-    }
-
-    if (bestNode) {
-      targeted.add(bestNode.id)
-      _deploy(rover, bestNode, baseX, baseY)
-    }
   }
 
   function toJSON() {

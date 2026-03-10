@@ -1,33 +1,24 @@
 /**
  * Rover sistemi — tek tip rover, seviye tabanlı istatistikler
+ *
+ * Rover tanımı ve denge sabitleri @/data/balance.js'den gelir.
+ * Bu dosya çekirdek rover mekaniklerini (oluşturma, güncelleme, gönderme) içerir.
  */
+
+import { ROVER_DEF } from '@/data/balance.js'
 
 export const ROVER_STATUS = {
   IDLE:       'idle',
-  DEPLOYING:  'deploying',    // hedefe gidiyor
-  COLLECTING: 'collecting',   // kaynakta topluyor
-  RETURNING:  'returning',    // üsse dönüyor
-  DAMAGED:    'damaged',      // arızalı — onarım bekliyor
-  DESTROYED:  'destroyed',    // yok edildi
-  BUILDING:   'building',     // inşa halinde
+  DEPLOYING:  'deploying',
+  COLLECTING: 'collecting',
+  RETURNING:  'returning',
+  DAMAGED:    'damaged',
+  DESTROYED:  'destroyed',
+  BUILDING:   'building',
 }
 
-export const ROVER_DEF = {
-  id: 'ROVER',
-  name: 'Rover',
-  icon: '🤖',
-  buildCost: { scrap_metal: 8, crystal_shard: 3 },
-  buildTime: 20,
-  breakdownChance: 0.006,
-  attackVulnerability: 0.5,
-  levels: [
-    { level: 1, speed: 3,   capacity: 15, durability: 80,  collectRate: 5,  powerUse: 4  },
-    { level: 2, speed: 4,   capacity: 25, durability: 130, collectRate: 8,  powerUse: 7,  upgradeCost: { scrap_metal: 15, crystal_shard: 5 } },
-    { level: 3, speed: 5.5, capacity: 40, durability: 200, collectRate: 12, powerUse: 11, upgradeCost: { scrap_metal: 30, alien_crystal: 8 } },
-  ],
-}
-
-// HUD icon uyumluluğu için alias
+// Geriye dönük uyumluluk re-exportlar
+export { ROVER_DEF }
 export const ROVER_TYPES = { ROVER: ROVER_DEF }
 
 export function getRoverStats(level = 1) {
