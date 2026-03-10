@@ -2,20 +2,10 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { RECIPES, canCraft, craft } from '@/game/systems/CraftingSystem.js'
 import { useBaseStore } from './baseStore.js'
+import { ITEMS } from '@/data/items.js'
 
-export const ITEMS = {
-  scrap_metal:    { id: 'scrap_metal',    name: 'Hurda Metal',     icon: '🔩', stackable: true, maxStack: 50 },
-  crystal_shard:  { id: 'crystal_shard',  name: 'Kristal Kırık',   icon: '💠', stackable: true, maxStack: 30 },
-  alien_plant:    { id: 'alien_plant',    name: 'Alien Bitkisi',   icon: '🌿', stackable: true, maxStack: 20, effects: { hunger: 15 } },
-  alien_crystal:  { id: 'alien_crystal',  name: 'Alien Kristali',  icon: '🔷', stackable: true, maxStack: 20 },
-  rock:           { id: 'rock',           name: 'Kaya Parçası',    icon: '🪨', stackable: true, maxStack: 99 },
-  water_filter:   { id: 'water_filter',   name: 'Su Filtresi',     icon: '💧', stackable: false, uses: 5,  effects: { thirst: 40 } },
-  alien_ration:   { id: 'alien_ration',   name: 'Alien Rasyonu',   icon: '🍱', stackable: true,  maxStack: 10, effects: { hunger: 50 } },
-  oxygen_canister:{ id: 'oxygen_canister',name: 'Oksijen Tüpü',    icon: '🫧', stackable: true,  maxStack: 5,  effects: { oxygen: 60 } },
-  med_kit:        { id: 'med_kit',        name: 'Tıbbi Kit',       icon: '🩹', stackable: true,  maxStack: 5,  effects: { health: 50 } },
-  pickaxe:        { id: 'pickaxe',        name: 'Kazma',           icon: '⛏', stackable: false, tool: 'mine' },
-  plasma_shard:   { id: 'plasma_shard',   name: 'Plazma Kıymığı',  icon: '⚡', stackable: true,  maxStack: 30, weapon: true, damage: 25 },
-}
+// Geriye dönük uyumluluk re-export
+export { ITEMS } from '@/data/items.js'
 
 export const useInventoryStore = defineStore('inventory', () => {
   // { itemId: quantity }

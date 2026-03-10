@@ -1,6 +1,9 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { BUILDING_TYPES, createBuilding, buildingPowerDelta, getBuildingPowerGen, getBuildingPowerUse, computeConnectedSet, buildingDistance } from '@/game/systems/BaseSystem.js'
+import { BUILDING_TYPES } from '@/data/buildings.js'
+import { BASE_STORAGE_CAPACITY, BUILD_RATE, DEFAULT_CONNECTION_RADIUS, COMPUTER_ROVER_LIMITS } from '@/data/balance.js'
+import { createBuilding } from '@/game/systems/BaseSystem.js'
+import { getBuildingPowerGen, getBuildingPowerUse, computeConnectedSet, computeConnections, buildingDistance } from '@/game/systems/PowerGrid.js'
 import { useInventoryStore } from './inventoryStore.js'
 import { useGameStore }      from './gameStore.js'
 
@@ -43,7 +46,7 @@ export const useBaseStore = defineStore('base', () => {
   )
 
   const storageCapacity = computed(() => {
-    let cap = 200
+    let cap = BASE_STORAGE_CAPACITY
     for (const b of buildings.value) {
       if (!connectedIds.value.has(b.id)) continue
       const def = BUILDING_TYPES[b.type]
@@ -70,7 +73,7 @@ export const useBaseStore = defineStore('base', () => {
   /** Bilgisayar seviyesine göre maksimum rover sayısı */
   const maxRovers = computed(() => {
     if (!computerRepaired.value) return 0
-    return [2, 4, 6][computerLevel.value - 1] ?? 2
+    return COMPUTER_ROVER_LIMITS[computerLevel.value - 1] ?? 2
   })
 
   /**
@@ -100,7 +103,7 @@ export const useBaseStore = defineStore('base', () => {
     for (const [item, qty] of Object.entries(upgrade.cost)) inventory.remove(item, qty)
 
     comp.level++
-    const newMax = [2, 4, 6][comp.level - 1] ?? 6
+    const newMax = COMPUTER_ROVER_LIMITS[comp.level - 1] ?? 6
     game.notify(`Ana Bilgisayar Sv.${comp.level} — Maks rover: ${newMax}`, 'success')
     return true
   }
@@ -162,7 +165,6 @@ export const useBaseStore = defineStore('base', () => {
   }
 
   function updateConstruction(delta) {
-    const BUILD_RATE = 20
     for (const b of buildings.value) {
       if (b.constructProgress < 100) {
         b.constructProgress = Math.min(100, b.constructProgress + BUILD_RATE * delta)
@@ -195,27 +197,14 @@ export const useBaseStore = defineStore('base', () => {
 
     for (const b of buildings.value) {
       if (!connectedIds.value.has(b.id) && b.type !== 'RESCUE_CAPSULE') continue
-      const maxR = BUILDING_TYPES[b.type]?.connectionRadius ?? 8
+      const maxR = BUILDING_TYPES[b.type]?.connectionRadius ?? DEFAULT_CONNECTION_RADIUS
       if (buildingDistance({ tx, ty }, b) <= maxR) return true
     }
     return false
   }
 
   function _updateConnections() {
-    const conns = []
-    const bs = buildings.value
-    for (let i = 0; i < bs.length; i++) {
-      for (let j = i + 1; j < bs.length; j++) {
-        const maxR = Math.max(
-          BUILDING_TYPES[bs[i].type]?.connectionRadius ?? 8,
-          BUILDING_TYPES[bs[j].type]?.connectionRadius ?? 8
-        )
-        if (buildingDistance(bs[i], bs[j]) <= maxR) {
-          conns.push({ from: bs[i].id, to: bs[j].id })
-        }
-      }
-    }
-    connections.value = conns
+    connections.value = computeConnections(buildings.value)
   }
 
   function getCorePosition() {

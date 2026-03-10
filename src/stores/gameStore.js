@@ -5,6 +5,7 @@ import { useInventoryStore } from './inventoryStore.js'
 import { useBaseStore }      from './baseStore.js'
 import { useRoverStore }     from './roverStore.js'
 import { SaveSystem }        from '@/game/utils/SaveSystem.js'
+import { STARTING_INVENTORY } from '@/data/balance.js'
 
 export const GAME_STATE = {
   MENU:    'menu',
@@ -39,7 +40,7 @@ export const useGameStore = defineStore('game', () => {
 
     const map = world.generate()
     base.init(map.spawnX, map.spawnY)
-    inventory.fromJSON({ scrap_metal: 15, rock: 10, alien_plant: 5, crystal_shard: 3 })
+    inventory.fromJSON(STARTING_INVENTORY)
     rovers.fromJSON({ rovers: [] })
     survivedDays.value = 0
 

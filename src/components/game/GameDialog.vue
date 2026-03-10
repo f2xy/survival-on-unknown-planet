@@ -63,8 +63,8 @@ import { computed } from 'vue'
 import { useGameStore }      from '@/stores/gameStore.js'
 import { useBaseStore }      from '@/stores/baseStore.js'
 import { useInventoryStore } from '@/stores/inventoryStore.js'
-import { BUILDING_TYPES }    from '@/game/systems/BaseSystem.js'
-import { ITEMS }             from '@/stores/inventoryStore.js'
+import { BUILDING_TYPES }    from '@/data/buildings.js'
+import { ITEMS }             from '@/data/items.js'
 
 const gameStore      = useGameStore()
 const baseStore      = useBaseStore()
