@@ -25,6 +25,9 @@
       @openBuildRover="showBuildRover = true"
     />
 
+    <!-- ── Gezegen Bilgi Paneli ── -->
+    <PlanetInfoPanel />
+
     <!-- ── Alt bilgi çubuğu ── -->
     <BottomBar />
 
@@ -66,6 +69,7 @@ import BuildingInfoPanel from '@/components/hud/BuildingInfoPanel.vue'
 import BottomBar        from '@/components/hud/BottomBar.vue'
 import NotificationList from '@/components/hud/NotificationList.vue'
 import RoverBuildDialog from '@/components/hud/RoverBuildDialog.vue'
+import PlanetInfoPanel from '@/components/hud/PlanetInfoPanel.vue'
 
 const gameStore = useGameStore()
 const baseStore = useBaseStore()

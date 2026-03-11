@@ -1,6 +1,7 @@
 /**
  * Hayatta kalma istatistikleri sistemi
  * Açlık, susuzluk, oksijen, enerji tüketimi
+ * Gezegen parametrelerine göre dinamik tüketim çarpanları uygulanır.
  */
 
 export const SURVIVAL_DEFAULTS = {
@@ -11,19 +12,35 @@ export const SURVIVAL_DEFAULTS = {
   energy:  { value: 100, max: 100 },
 }
 
-// Saniyede düşüş miktarları (normal koşul)
-const DRAIN_RATES = {
+// Saniyede temel düşüş miktarları (normal koşul, Dünya benzeri gezegen)
+const BASE_DRAIN_RATES = {
   hunger:  0.4,   // 250 sn'de biter
   thirst:  0.6,   // ~167 sn
-  oxygen:  0.2,   // 500 sn — gezegen atmosferi kısmi oksijen
+  oxygen:  0.2,   // 500 sn — varsayılan atmosfer
   energy:  0.3,   // hareket edince artar
 }
 
 const HEALTH_DRAIN_RATE = 1.5  // açken sağlık düşüş hızı
 
 export class SurvivalSystem {
-  constructor(stats) {
+  /**
+   * @param {object|null} stats    - Kayıttan yüklenen istatistikler
+   * @param {object|null} planetEffects - worldStore.planetEffects
+   *   { oxygenDrainMult, radiationDrainMult, gravityEnergyMult, toxicAtmosphere }
+   */
+  constructor(stats, planetEffects = null) {
     this.stats = stats ? { ...stats } : this._defaultStats()
+    this.planetEffects = planetEffects ?? {
+      oxygenDrainMult:    1.0,
+      radiationDrainMult: 1.0,
+      gravityEnergyMult:  1.0,
+      toxicAtmosphere:    false,
+    }
+  }
+
+  /** Gezegen etkilerini güncelle (dünya yüklendikten sonra çağrılır) */
+  applyPlanetEffects(effects) {
+    if (effects) this.planetEffects = { ...effects }
   }
 
   _defaultStats() {
@@ -43,15 +60,38 @@ export class SurvivalSystem {
    */
   update(delta, context = {}) {
     const { isMoving = false, isInToxicArea = false, hasOxygenTank = false } = context
+    const pe = this.planetEffects
 
-    // Tüketim
-    this._drain('hunger', DRAIN_RATES.hunger * delta)
-    this._drain('thirst', DRAIN_RATES.thirst * delta)
-    this._drain('oxygen', DRAIN_RATES.oxygen * (isInToxicArea ? 2 : 1) * (hasOxygenTank ? 0.3 : 1) * delta)
-    if (isMoving) this._drain('energy', DRAIN_RATES.energy * delta)
-    else          this._restore('energy', DRAIN_RATES.energy * 0.5 * delta)
+    // ── Oksijen tüketimi ─────────────────────────────────────────────────────
+    // Gezegen atmosfer çarpanı + toksik alan etkisi + oksijen tankı
+    const oxyMult = pe.oxygenDrainMult
+                  * (isInToxicArea || pe.toxicAtmosphere ? 2.0 : 1.0)
+                  * (hasOxygenTank ? 0.3 : 1.0)
+    this._drain('oxygen', BASE_DRAIN_RATES.oxygen * oxyMult * delta)
 
-    // Açlık/susuzluk sağlığı etkiler
+    // ── Açlık / Susuzluk ─────────────────────────────────────────────────────
+    // Yüksek yerçekimi → daha çok metabolizma → daha hızlı açlık/susuzluk
+    const metabolismMult = Math.max(0.7, Math.min(1.8, pe.gravityEnergyMult))
+    this._drain('hunger', BASE_DRAIN_RATES.hunger * metabolismMult * delta)
+    this._drain('thirst', BASE_DRAIN_RATES.thirst * metabolismMult * delta)
+
+    // ── Enerji (hareket + yerçekimi) ─────────────────────────────────────────
+    if (isMoving) {
+      this._drain('energy', BASE_DRAIN_RATES.energy * pe.gravityEnergyMult * delta)
+    } else {
+      this._restore('energy', BASE_DRAIN_RATES.energy * 0.5 * delta)
+    }
+
+    // ── Radyasyon → sağlık hasarı ────────────────────────────────────────────
+    // Radyasyon direkt sağlık düşürür (oksijen tankı kısmen korur)
+    const radMult = pe.radiationDrainMult * (hasOxygenTank ? 0.5 : 1.0)
+    if (radMult > 1.5) {
+      // Yüksek radyasyon → sürekli düşük sağlık kaybı
+      const radDamage = (radMult - 1.0) * 0.08 * delta
+      this._drain('health', radDamage)
+    }
+
+    // ── Açlık/susuzluk/hipoksi → sağlık kaybı ────────────────────────────────
     const starving   = this.stats.hunger < 20
     const dehydrated = this.stats.thirst < 20
     const hypoxic    = this.stats.oxygen < 15
@@ -91,6 +131,10 @@ export class SurvivalSystem {
     if (this.stats.thirst  < 25) alerts.push({ stat: 'thirst',  level: this.stats.thirst < 10 ? 'critical' : 'warning' })
     if (this.stats.oxygen  < 20) alerts.push({ stat: 'oxygen',  level: this.stats.oxygen < 10 ? 'critical' : 'warning' })
     if (this.stats.energy  < 15) alerts.push({ stat: 'energy',  level: 'warning' })
+    // Yüksek radyasyon uyarısı
+    if (this.planetEffects.radiationDrainMult >= 3.5) {
+      alerts.push({ stat: 'radiation', level: this.planetEffects.radiationDrainMult >= 6 ? 'critical' : 'warning' })
+    }
     return alerts
   }
 

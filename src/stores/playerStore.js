@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import { useWorldStore } from './worldStore.js'
 
 export const usePlayerStore = defineStore('player', () => {
   // ── Konum ──
@@ -31,12 +32,17 @@ export const usePlayerStore = defineStore('player', () => {
   const energyPct  = computed(() => (energy.value  / energyMax.value)  * 100)
 
   const alerts = computed(() => {
+    const world = useWorldStore()
+    const pe = world.planetEffects
     const list = []
-    if (healthPct.value  < 30) list.push({ stat: 'health',  msg: 'Kritik Sağlık!', level: healthPct.value  < 15 ? 'critical' : 'warning' })
-    if (hungerPct.value  < 25) list.push({ stat: 'hunger',  msg: 'Açsınız!',       level: hungerPct.value  < 10 ? 'critical' : 'warning' })
-    if (thirstPct.value  < 25) list.push({ stat: 'thirst',  msg: 'Susadınız!',     level: thirstPct.value  < 10 ? 'critical' : 'warning' })
-    if (oxygenPct.value  < 20) list.push({ stat: 'oxygen',  msg: 'Düşük Oksijen!', level: oxygenPct.value  < 10 ? 'critical' : 'warning' })
-    if (energyPct.value  < 15) list.push({ stat: 'energy',  msg: 'Yorgunsunuz!',   level: 'warning' })
+    if (healthPct.value  < 30) list.push({ stat: 'health',  msg: 'Kritik Sağlık!',  level: healthPct.value  < 15 ? 'critical' : 'warning' })
+    if (hungerPct.value  < 25) list.push({ stat: 'hunger',  msg: 'Açsınız!',         level: hungerPct.value  < 10 ? 'critical' : 'warning' })
+    if (thirstPct.value  < 25) list.push({ stat: 'thirst',  msg: 'Susadınız!',       level: thirstPct.value  < 10 ? 'critical' : 'warning' })
+    if (oxygenPct.value  < 20) list.push({ stat: 'oxygen',  msg: 'Düşük Oksijen!',   level: oxygenPct.value  < 10 ? 'critical' : 'warning' })
+    if (energyPct.value  < 15) list.push({ stat: 'energy',  msg: 'Yorgunsunuz!',     level: 'warning' })
+    if (pe?.radiationDrainMult >= 3.5) {
+      list.push({ stat: 'radiation', msg: 'Yüksek Radyasyon!', level: pe.radiationDrainMult >= 6 ? 'critical' : 'warning' })
+    }
     return list
   })
 
@@ -44,14 +50,38 @@ export const usePlayerStore = defineStore('player', () => {
   function updateStats(delta, ctx = {}) {
     if (!isAlive.value) return
 
-    const drain = (ref, rate) => { ref.value = Math.max(0, ref.value - rate * delta) }
+    // Gezegen etkilerini al
+    const world = useWorldStore()
+    const pe = world.planetEffects ?? {
+      oxygenDrainMult:    1.0,
+      radiationDrainMult: 1.0,
+      gravityEnergyMult:  1.0,
+      toxicAtmosphere:    false,
+    }
+
+    const drain   = (ref, rate) => { ref.value = Math.max(0, ref.value - rate * delta) }
     const restore = (ref, rate, max) => { ref.value = Math.min(max.value, ref.value + rate * delta) }
 
-    drain(hunger, 0.4)
-    drain(thirst, 0.6)
-    drain(oxygen, 0.2 * (ctx.toxic ? 2 : 1))
-    if (ctx.moving) drain(energy, 0.3)
+    // Metabolizma hızı: yerçekimi etkisi
+    const metabolismMult = Math.max(0.7, Math.min(1.8, pe.gravityEnergyMult))
+    drain(hunger, 0.4 * metabolismMult)
+    drain(thirst, 0.6 * metabolismMult)
+
+    // Oksijen: atmosfer + toksik alan + tank
+    const oxyMult = pe.oxygenDrainMult
+                  * ((ctx.toxic || pe.toxicAtmosphere) ? 2.0 : 1.0)
+                  * (ctx.hasOxygenTank ? 0.3 : 1.0)
+    drain(oxygen, 0.2 * oxyMult)
+
+    // Enerji: yerçekimi enerji tüketimini artırır
+    if (ctx.moving) drain(energy, 0.3 * pe.gravityEnergyMult)
     else            restore(energy, 0.15, energyMax)
+
+    // Radyasyon → sürekli sağlık hasarı (yüksek ise)
+    if (pe.radiationDrainMult > 1.5) {
+      const radDmg = (pe.radiationDrainMult - 1.0) * 0.08
+      drain(health, radDmg)
+    }
 
     // Kritik → sağlık düşüşü
     const isStarving  = hungerPct.value  < 20
@@ -60,7 +90,7 @@ export const usePlayerStore = defineStore('player', () => {
     if (isStarving || isThirsty || isHypoxic) {
       const mult = (isStarving ? 1 : 0) + (isThirsty ? 1.5 : 0) + (isHypoxic ? 2 : 0)
       drain(health, 1.5 * mult)
-    } else if (healthPct.value < 100) {
+    } else if (healthPct.value < 100 && pe.radiationDrainMult <= 1.5) {
       restore(health, 0.5, healthMax)
     }
 

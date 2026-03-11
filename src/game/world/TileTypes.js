@@ -23,14 +23,36 @@ export const TILE = {
 }
 
 /**
- * Noise değerine göre tile seç
+ * Noise değerine göre tile seç.
+ * @param {number} n - -1..1 arası noise değeri
+ * @param {object} [profile] - { heat, cold, lush, barren } — gezegen profili
  */
-export function tileFromNoise(n) {
-  if (n < -0.45)  return TILE.CRYSTAL_WALL
-  if (n < -0.1)   return TILE.ALIEN_GRASS
-  if (n < 0.15)   return TILE.DUST
-  if (n < 0.35)   return TILE.CRYSTAL_FLOOR
-  if (n < 0.45)   return TILE.METAL_PLATE
+export function tileFromNoise(n, profile = null) {
+  if (!profile) {
+    // Varsayılan davranış
+    if (n < -0.45)  return TILE.CRYSTAL_WALL
+    if (n < -0.1)   return TILE.ALIEN_GRASS
+    if (n < 0.15)   return TILE.DUST
+    if (n < 0.35)   return TILE.CRYSTAL_FLOOR
+    if (n < 0.45)   return TILE.METAL_PLATE
+    return TILE.ROCK
+  }
+
+  // Gezegen profiline göre dinamik eşikler
+  // Sıcak gezegen → kaya/toz eşiği yüksek, bitki eşiği düşük
+  // Soğuk gezegen → kristal eşiği yüksek, toz azalır
+  // Çıplak gezegen → daha fazla kaya
+
+  const grassCutoff = -0.45 + profile.lush  * 0.30   // lush→ [-0.45, -0.15]
+  const dustCutoff  = -0.10 + profile.heat  * 0.15   // heat→  [-0.10,  0.05]
+  const crystCutoff =  0.15 + profile.cold  * 0.15   // cold→  [0.15,  0.30]
+  const metalCutoff =  0.35 - profile.barren * 0.10  // barren → daha az metal
+
+  if (n < -0.45)           return TILE.CRYSTAL_WALL
+  if (n < grassCutoff)     return TILE.ALIEN_GRASS
+  if (n < dustCutoff)      return TILE.DUST
+  if (n < crystCutoff)     return TILE.CRYSTAL_FLOOR
+  if (n < metalCutoff)     return TILE.METAL_PLATE
   return TILE.ROCK
 }
 
