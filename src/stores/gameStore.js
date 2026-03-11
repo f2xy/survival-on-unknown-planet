@@ -50,6 +50,18 @@ export const useGameStore = defineStore('game', () => {
     state.value = GAME_STATE.PLAYING
     notify('Kurtarma kapsülü aktif — Ana Bilgisayar hasarlı!', 'warning')
     notify('İlk görev: Bilgisayarı tamir et → roverlar otonom moda geçer.', 'info')
+
+    // Gezegen bildirimini göster
+    const p = world.planet
+    if (p) {
+      const radWarn = p.radiation.drainMult >= 3.5 ? ' ⚠ YÜKSEK RADYASYON!' : ''
+      const atmWarn = p.atmosphere.toxicDamage ? ' ⚠ TOKSİK ATMOSFER!' : ''
+      notify(
+        `Gezegen: ${p.name} | ${p.star.name} | ${p.orbit.distanceAU} AU${radWarn}${atmWarn}`,
+        p.radiation.drainMult >= 3.5 || p.atmosphere.toxicDamage ? 'warning' : 'info',
+        6000,
+      )
+    }
   }
 
   function loadGame() {
